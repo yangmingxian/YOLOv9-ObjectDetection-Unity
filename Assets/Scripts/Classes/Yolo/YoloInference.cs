@@ -1,6 +1,4 @@
-
 using System.Collections.Generic;
-using System.Linq;
 using Unity.Sentis;
 using UnityEngine;
 
@@ -30,19 +28,20 @@ public class YoloInference
             Debug.LogError("Output Tensor not found!");
             return null;
         }
-            
 
         int numDetections = outputTensor.shape[2];
         int numClasses = 80;  // COCO dataset
+
         // Initialize the valid detection counter to 0
         uint[] zeroArray = { 0 };
 
         // Create compute buffers for input/output
         ComputeBuffer outputBoxesBuffer = new ComputeBuffer(numDetections, sizeof(float) * 4);  // Bounding boxes buffer
-        ComputeBuffer outputClassesBuffer = new ComputeBuffer(numDetections, sizeof(int));  // Class index buffer
-        ComputeBuffer outputScoresBuffer = new ComputeBuffer(numDetections, sizeof(float));  // Scores buffer
+        ComputeBuffer outputClassesBuffer = new ComputeBuffer(numDetections, sizeof(int));      // Class index buffer
+        ComputeBuffer outputScoresBuffer = new ComputeBuffer(numDetections, sizeof(float));     // Scores buffer
         ComputeBuffer validDetectionCounterBuffer = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Raw);  // Counter for valid detections
         ComputeBuffer outputTensorBuffer = computeTensorData.buffer;
+
         // Set compute shader parameters
         int kernelHandle = postProcessingShader.FindKernel("CSMain");
         postProcessingShader.SetFloat("confidenceThreshold", confidenceThreshold);
@@ -59,7 +58,7 @@ public class YoloInference
         postProcessingShader.SetBuffer(kernelHandle, "outputScores", outputScoresBuffer);
         postProcessingShader.SetBuffer(kernelHandle, "validDetectionCounter", validDetectionCounterBuffer);
 
-        // Dispatch compute shader (numDetections / thread group size)
+        // Dispatch compute shader
         int threadGroups = Mathf.CeilToInt((float)numDetections / 256);
         postProcessingShader.Dispatch(kernelHandle, threadGroups, 1, 1);
 
@@ -68,18 +67,112 @@ public class YoloInference
         validDetectionCounterBuffer.GetData(validDetectionCountArray);
         int validDetectionCount = (int)validDetectionCountArray[0];
 
-        // Retrieve results from the GPU
-        float[] boxes = new float[validDetectionCount * 4];
-        int[] classes = new int[validDetectionCount];
-        float[] scores = new float[validDetectionCount];
+        if (validDetectionCount == 0)
+        {
+            // Release resources
+            outputBoxesBuffer.Release();
+            outputClassesBuffer.Release();
+            outputScoresBuffer.Release();
+            validDetectionCounterBuffer.Release();
+            computeTensorData.Dispose();
+            outputTensorBuffer.Release();
 
-        outputBoxesBuffer.GetData(boxes, 0, 0, validDetectionCount * 4);
-        outputClassesBuffer.GetData(classes, 0, 0, validDetectionCount);
-        outputScoresBuffer.GetData(scores, 0, 0, validDetectionCount);
+            return new List<YoloPrediction>();
+        }
+
+        // Pass the buffers directly to the NMS shader
+        List<YoloPrediction> predictions = ApplyNonMaxSuppression(
+            outputBoxesBuffer, outputClassesBuffer, outputScoresBuffer, validDetectionCount);
+
+        // Release resources
+        outputBoxesBuffer.Release();
+        outputClassesBuffer.Release();
+        outputScoresBuffer.Release();
+        validDetectionCounterBuffer.Release();
+        computeTensorData.Dispose();
+        outputTensorBuffer.Release();
+
+        return predictions;
+    }
+
+    public List<YoloPrediction> ApplyNonMaxSuppression(
+        ComputeBuffer boxesBuffer, ComputeBuffer classesBuffer, ComputeBuffer scoresBuffer, int numDetections)
+    {
+        ComputeShader nmsShader = Resources.Load<ComputeShader>("NonMaxSuppression");
+        if (nmsShader == null)
+        {
+            Debug.LogError("NMS Compute Shader not found!");
+            return null;
+        }
+
+        if (numDetections == 0)
+            return new List<YoloPrediction>();
+
+        // Create output buffers for the NMS shader
+        ComputeBuffer nmsBoxesBuffer = new ComputeBuffer(numDetections, sizeof(float) * 4);
+        ComputeBuffer nmsClassesBuffer = new ComputeBuffer(numDetections, sizeof(int));
+        ComputeBuffer nmsScoresBuffer = new ComputeBuffer(numDetections, sizeof(float));
+
+        // Create an atomic counter for the number of detections after NMS
+        ComputeBuffer nmsDetectionCounterBuffer = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Raw);
+        uint[] zeroArray = { 0 };
+        nmsDetectionCounterBuffer.SetData(zeroArray);
+
+        // Create a buffer for selected indices
+        ComputeBuffer selectedIndicesBuffer = new ComputeBuffer(numDetections, sizeof(int));
+        // Initialize selectedIndices with zeros
+        int[] selectedIndicesInit = new int[numDetections];
+        selectedIndicesInit[0] = 1; // Initialize first index to 1
+        selectedIndicesBuffer.SetData(selectedIndicesInit);
+
+        // Set shader parameters
+        int kernelHandle = nmsShader.FindKernel("CSMain");
+        nmsShader.SetInt("numDetections", numDetections);
+        nmsShader.SetFloat("iouThreshold", iouThreshold);
+
+        // Bind buffers
+        nmsShader.SetBuffer(kernelHandle, "inputBoxes", boxesBuffer);
+        nmsShader.SetBuffer(kernelHandle, "inputScores", scoresBuffer);
+        nmsShader.SetBuffer(kernelHandle, "inputClasses", classesBuffer);
+        nmsShader.SetBuffer(kernelHandle, "outputBoxes", nmsBoxesBuffer);
+        nmsShader.SetBuffer(kernelHandle, "outputScores", nmsScoresBuffer);
+        nmsShader.SetBuffer(kernelHandle, "outputClasses", nmsClassesBuffer);
+        nmsShader.SetBuffer(kernelHandle, "nmsDetectionCounter", nmsDetectionCounterBuffer);
+        nmsShader.SetBuffer(kernelHandle, "selectedIndices", selectedIndicesBuffer);
+
+        // Dispatch shader
+        int threadGroups = Mathf.CeilToInt((float)numDetections / 256);
+        nmsShader.Dispatch(kernelHandle, threadGroups, 1, 1);
+
+        // Get the number of detections after NMS
+        uint[] nmsDetectionCountArray = new uint[1];
+        nmsDetectionCounterBuffer.GetData(nmsDetectionCountArray);
+        int nmsDetectionCount = (int)nmsDetectionCountArray[0];
+
+        if (nmsDetectionCount == 0)
+        {
+            // Release buffers
+            nmsBoxesBuffer.Release();
+            nmsScoresBuffer.Release();
+            nmsClassesBuffer.Release();
+            nmsDetectionCounterBuffer.Release();
+            selectedIndicesBuffer.Release();
+
+            return new List<YoloPrediction>();
+        }
+
+        // Retrieve results from the GPU
+        float[] boxes = new float[nmsDetectionCount * 4];
+        int[] classes = new int[nmsDetectionCount];
+        float[] scores = new float[nmsDetectionCount];
+
+        nmsBoxesBuffer.GetData(boxes, 0, 0, nmsDetectionCount * 4);
+        nmsClassesBuffer.GetData(classes, 0, 0, nmsDetectionCount);
+        nmsScoresBuffer.GetData(scores, 0, 0, nmsDetectionCount);
 
         // Convert output to YoloPrediction list
-        List<YoloPrediction> predictions = new List<YoloPrediction>();
-        for (int i = 0; i < validDetectionCount; i++)
+        List<YoloPrediction> result = new List<YoloPrediction>();
+        for (int i = 0; i < nmsDetectionCount; i++)
         {
             float xMin = boxes[i * 4 + 0];
             float yMin = boxes[i * 4 + 1];
@@ -94,107 +187,16 @@ public class YoloInference
                 Score = scores[i],
                 BoundingBox = new Rect(xMin, yMin, width, height)
             };
-            predictions.Add(prediction);
-        }
-
-        // Release compute buffers
-        outputTensorBuffer.Release();
-        outputBoxesBuffer.Release();
-        outputClassesBuffer.Release();
-        outputScoresBuffer.Release();
-        validDetectionCounterBuffer.Release();
-        computeTensorData.Dispose();
-
-        return ApplyNonMaxSuppression(predictions, iouThreshold);
-    }
-
-    public List<YoloPrediction> ApplyNonMaxSuppression(List<YoloPrediction> predictions, float iouThreshold)
-    {
-        ComputeShader nmsShader = Resources.Load<ComputeShader>("NonMaxSuppression");
-        if (nmsShader == null)
-        {
-            Debug.LogError("NMS Compute Shader not found!");
-            return null;
-        }
-
-        int numDetections = predictions.Count;
-        if (numDetections == 0)
-            return new List<YoloPrediction>();
-
-        // Prepare data arrays
-        float[] boxes = new float[numDetections * 4];
-        float[] scores = new float[numDetections];
-        int[] classes = new int[numDetections];
-        int[] selectedIndices = new int[numDetections];
-
-        for (int i = 0; i < numDetections; i++)
-        {
-            var bbox = predictions[i].BoundingBox;
-            boxes[i * 4 + 0] = bbox.xMin;
-            boxes[i * 4 + 1] = bbox.yMin;
-            boxes[i * 4 + 2] = bbox.width;
-            boxes[i * 4 + 3] = bbox.height;
-            scores[i] = predictions[i].Score;
-            classes[i] = predictions[i].ClassIndex;
-            selectedIndices[i] = 1; // Initialize all to selected
-        }
-
-        // Create compute buffers
-        ComputeBuffer boxesBuffer = new ComputeBuffer(numDetections, sizeof(float) * 4);
-        ComputeBuffer scoresBuffer = new ComputeBuffer(numDetections, sizeof(float));
-        ComputeBuffer classesBuffer = new ComputeBuffer(numDetections, sizeof(int));
-        ComputeBuffer selectedBuffer = new ComputeBuffer(numDetections, sizeof(int));
-
-        // Set data
-        boxesBuffer.SetData(boxes);
-        scoresBuffer.SetData(scores);
-        classesBuffer.SetData(classes);
-        selectedBuffer.SetData(selectedIndices);
-
-        // Set shader parameters
-        int kernelHandle = nmsShader.FindKernel("CSMain");
-        nmsShader.SetInt("numDetections", numDetections);
-        nmsShader.SetFloat("iouThreshold", iouThreshold);
-
-        // Bind buffers
-        nmsShader.SetBuffer(kernelHandle, "inputBoxes", boxesBuffer);
-        nmsShader.SetBuffer(kernelHandle, "inputScores", scoresBuffer);
-        nmsShader.SetBuffer(kernelHandle, "inputClasses", classesBuffer);
-        nmsShader.SetBuffer(kernelHandle, "selectedIndices", selectedBuffer);
-
-        // Dispatch shader
-        int threadGroups = Mathf.CeilToInt((float)numDetections / 256);
-        nmsShader.Dispatch(kernelHandle, threadGroups, 1, 1);
-
-        // Get results
-        selectedBuffer.GetData(selectedIndices);
-
-        // Collect selected predictions
-        List<YoloPrediction> result = new List<YoloPrediction>();
-        for (int i = 0; i < numDetections; i++)
-        {
-            if (selectedIndices[i] == 1)
-            {
-                result.Add(predictions[i]);
-            }
+            result.Add(prediction);
         }
 
         // Release buffers
-        boxesBuffer.Release();
-        scoresBuffer.Release();
-        classesBuffer.Release();
-        selectedBuffer.Release();
+        nmsBoxesBuffer.Release();
+        nmsScoresBuffer.Release();
+        nmsClassesBuffer.Release();
+        nmsDetectionCounterBuffer.Release();
+        selectedIndicesBuffer.Release();
 
         return result;
-    }
-
-    private float CalculateIoU(Rect boxA, Rect boxB)
-    {
-        float intersectionWidth = Mathf.Max(0, Mathf.Min(boxA.xMax, boxB.xMax) - Mathf.Max(boxA.xMin, boxB.xMin));
-        float intersectionHeight = Mathf.Max(0, Mathf.Min(boxA.yMax, boxB.yMax) - Mathf.Max(boxA.yMin, boxB.yMin));
-        float intersectionArea = intersectionWidth * intersectionHeight;
-
-        float unionArea = boxA.width * boxA.height + boxB.width * boxB.height - intersectionArea;
-        return intersectionArea / unionArea;
     }
 }

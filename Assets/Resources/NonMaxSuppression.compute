@@ -4,7 +4,14 @@
 StructuredBuffer<float4> inputBoxes; // x, y, w, h
 StructuredBuffer<float> inputScores;
 StructuredBuffer<int> inputClasses;
+
 RWStructuredBuffer<int> selectedIndices;
+
+RWStructuredBuffer<float4> outputBoxes;
+RWStructuredBuffer<float> outputScores;
+RWStructuredBuffer<int> outputClasses;
+
+RWByteAddressBuffer nmsDetectionCounter;
 
 int numDetections;
 float iouThreshold;
@@ -39,6 +46,21 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
     bool keep = true;
 
+    if (idx == 0)
+    {
+        // First detection, select it
+        selectedIndices[idx] = 1;
+
+        uint count;
+        nmsDetectionCounter.InterlockedAdd(0, 1, count);
+
+        outputBoxes[count] = boxA;
+        outputScores[count] = scoreA;
+        outputClasses[count] = classA;
+
+        return;
+    }
+
     for (uint i = 0; i < idx; i++)
     {
         if (selectedIndices[i] == 0)
@@ -59,4 +81,15 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     }
 
     selectedIndices[idx] = keep ? 1 : 0;
+
+    if (keep)
+    {
+        // Use atomic counter to get index to write to
+        uint count;
+        nmsDetectionCounter.InterlockedAdd(0, 1, count);
+
+        outputBoxes[count] = boxA;
+        outputScores[count] = scoreA;
+        outputClasses[count] = classA;
+    }
 }
