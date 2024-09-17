@@ -1,0 +1,62 @@
+// NonMaxSuppression.compute
+#pragma kernel CSMain
+
+StructuredBuffer<float4> inputBoxes; // x, y, w, h
+StructuredBuffer<float> inputScores;
+StructuredBuffer<int> inputClasses;
+RWStructuredBuffer<int> selectedIndices;
+
+int numDetections;
+float iouThreshold;
+
+float CalculateIoU(float4 boxA, float4 boxB)
+{
+    float x1 = max(boxA.x, boxB.x);
+    float y1 = max(boxA.y, boxB.y);
+    float x2 = min(boxA.x + boxA.z, boxB.x + boxB.z);
+    float y2 = min(boxA.y + boxA.w, boxB.y + boxB.w);
+
+    float intersectionWidth = max(0, x2 - x1);
+    float intersectionHeight = max(0, y2 - y1);
+    float intersection = intersectionWidth * intersectionHeight;
+
+    float areaA = boxA.z * boxA.w;
+    float areaB = boxB.z * boxB.w;
+
+    return intersection / (areaA + areaB - intersection + 1e-6); // Add epsilon to prevent division by zero
+}
+
+[numthreads(256, 1, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= numDetections)
+        return;
+
+    float4 boxA = inputBoxes[idx];
+    float scoreA = inputScores[idx];
+    int classA = inputClasses[idx];
+
+    bool keep = true;
+
+    for (uint i = 0; i < idx; i++)
+    {
+        if (selectedIndices[i] == 0)
+            continue;
+
+        int classB = inputClasses[i];
+        if (classA != classB)
+            continue;
+
+        float4 boxB = inputBoxes[i];
+        float iou = CalculateIoU(boxA, boxB);
+
+        if (iou > iouThreshold)
+        {
+            keep = false;
+            break;
+        }
+    }
+
+    selectedIndices[idx] = keep ? 1 : 0;
+}
