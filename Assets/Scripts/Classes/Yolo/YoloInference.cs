@@ -6,30 +6,43 @@ using UnityEngine;
 
 public class YoloInference
 {
-    private ComputeBuffer outputTensorBuffer, outputBoxesBuffer, outputClassesBuffer, outputScoresBuffer, validDetectionCounterBuffer;
-    
-    public List<YoloPrediction> ProcessYoloOutput(ComputeShader postProcessingShader, Tensor<float> outputTensor, int imageWidth, int imageHeight, float confidenceThreshold, float iouThreshold)
+    private float confidenceThreshold;
+    private float iouThreshold;
+
+    public YoloInference(float confidenceThreshold = 0.5f, float iouThreshold = 0.4f)
     {
-        int numDetections = outputTensor.shape[2];
-        int numClasses = 80;  // COCO dataset
+        this.confidenceThreshold = confidenceThreshold;
+        this.iouThreshold = iouThreshold;
+    }
 
-        // Create compute buffers for input/output
-        outputBoxesBuffer = new ComputeBuffer(numDetections, sizeof(float) * 4);  // Bounding boxes buffer
-        outputClassesBuffer = new ComputeBuffer(numDetections, sizeof(int));  // Class index buffer
-        outputScoresBuffer = new ComputeBuffer(numDetections, sizeof(float));  // Scores buffer
-        validDetectionCounterBuffer = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Raw);  // Counter for valid detections
-
-
-        // Initialize the valid detection counter to 0
-        uint[] zeroArray = { 0 };
-        validDetectionCounterBuffer.SetData(zeroArray);
-
-        ComputeTensorData computeTensorData = ComputeTensorData.Pin(outputTensor);
-        if (computeTensorData != null)
+    public List<YoloPrediction> ProcessYoloOutput(Tensor<float> outputTensor, int imageWidth, int imageHeight)
+    {
+        ComputeShader postProcessingShader = Resources.Load<ComputeShader>("PostProcessOutput");
+        if (postProcessingShader == null)
         {
-            outputTensorBuffer = computeTensorData.buffer; // YOLO output tensor buffer
+            Debug.LogError("Compute Shader not found!");
+            return null;
         }
 
+        ComputeTensorData computeTensorData = ComputeTensorData.Pin(outputTensor);
+        if (computeTensorData == null)
+        {
+            Debug.LogError("Output Tensor not found!");
+            return null;
+        }
+            
+
+        int numDetections = outputTensor.shape[2];
+        int numClasses = 80;  // COCO dataset
+        // Initialize the valid detection counter to 0
+        uint[] zeroArray = { 0 };
+
+        // Create compute buffers for input/output
+        ComputeBuffer outputBoxesBuffer = new ComputeBuffer(numDetections, sizeof(float) * 4);  // Bounding boxes buffer
+        ComputeBuffer outputClassesBuffer = new ComputeBuffer(numDetections, sizeof(int));  // Class index buffer
+        ComputeBuffer outputScoresBuffer = new ComputeBuffer(numDetections, sizeof(float));  // Scores buffer
+        ComputeBuffer validDetectionCounterBuffer = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Raw);  // Counter for valid detections
+        ComputeBuffer outputTensorBuffer = computeTensorData.buffer;
         // Set compute shader parameters
         int kernelHandle = postProcessingShader.FindKernel("CSMain");
         postProcessingShader.SetFloat("confidenceThreshold", confidenceThreshold);
@@ -37,6 +50,7 @@ public class YoloInference
         postProcessingShader.SetInt("numClasses", numClasses);
         postProcessingShader.SetInt("imageWidth", imageWidth);
         postProcessingShader.SetInt("imageHeight", imageHeight);
+        validDetectionCounterBuffer.SetData(zeroArray);
 
         // Bind buffers to the compute shader
         postProcessingShader.SetBuffer(kernelHandle, "outputTensor", outputTensorBuffer);

@@ -146,6 +146,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2441222260765612583}
   - component: {fileID: 8382768724409715789}
+  - component: {fileID: 3662140237107121936}
   - component: {fileID: 1315342650664914342}
   m_Layer: 5
   m_Name: BBox
@@ -182,6 +183,18 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8433249099508467292}
   m_CullTransparentMesh: 1
+--- !u!114 &3662140237107121936
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8433249099508467292}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f3546bd153aaffc41a0ae0feb45e782e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!114 &1315342650664914342
 MonoBehaviour:
   m_ObjectHideFlags: 0

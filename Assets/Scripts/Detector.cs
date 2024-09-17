@@ -4,7 +4,7 @@ using Unity.Sentis;
 using System.Collections.Generic;
 using TMPro;
 
-public class ImageResizer : MonoBehaviour
+public class Detector : MonoBehaviour
 {
     private const int TARGET_WIDTH = 640;
     private const int TARGET_HEIGHT = 640;
@@ -16,27 +16,25 @@ public class ImageResizer : MonoBehaviour
     private int webcamHeight;
 
     // Display
-    public GameObject boundingBoxPrefab; // Prefab with a UI Image for bounding boxes
-    public RawImage displayImage; // Reference to the RawImage displaying the image
-    public RectTransform canvasRectTransform; // The Canvas RectTransform
+    [SerializeField] private GameObject boundingBoxPrefab; // Prefab with a UI Image for bounding boxes
+    [SerializeField] private RawImage displayImage; // Reference to the RawImage displaying the image
 
     // Object Detection
-    public ModelAsset modelAsset;
-    public float confidenceThreshold = 0.5f;
-    public float iouThreshold = 0.4f; // IoU threshold for Non-Max Suppression (NMS)
+    [SerializeField] private ModelAsset modelAsset;
+    [SerializeField] private float confidenceThreshold = 0.5f;
+    [SerializeField] private float iouThreshold = 0.4f; // IoU threshold for Non-Max Suppression (NMS)
     private Model runtimeModel;
     private Worker worker;
     private YoloInference yoloInference;
-    public ComputeShader postProcessingShader;
 
     private WebCamTexture webcamTexture;
-    private RenderTexture renderTexture;
-    private Texture2D cameraTexture2D;
-    private List<GameObject> drawnPredictions = new List<GameObject>();
+    private List<BoundingBox> activeBoundingBoxes = new List<BoundingBox>();
 
+    // Object Pooling
+    private ObjectPool<BoundingBox> boundingBoxPool;
     private void OnEnable()
     {
-        yoloInference = new YoloInference();
+        yoloInference = new YoloInference(confidenceThreshold, iouThreshold); 
         runtimeModel = ModelLoader.Load(modelAsset);
         worker = new Worker(runtimeModel, BackendType.GPUCompute);
     }
@@ -49,6 +47,14 @@ public class ImageResizer : MonoBehaviour
 
         // Assign the webcam texture to the RawImage
         displayImage.texture = webcamTexture;
+
+        // Initialize the object pool
+        RectTransform rawImageRectTransform = displayImage.GetComponent<RectTransform>();
+        boundingBoxPool = new ObjectPool<BoundingBox>(
+            boundingBoxPrefab.GetComponent<BoundingBox>(),
+            initialSize: 10,
+            parent: rawImageRectTransform
+        );
     }
 
     void Update()
@@ -56,12 +62,11 @@ public class ImageResizer : MonoBehaviour
         // Check if the webcam texture has received a new frame
         if (webcamTexture.didUpdateThisFrame)
         {
-            DestroyBoundingBoxes(drawnPredictions);
+            ResetBoundingBoxes();
 
             displayImage.texture = webcamTexture;
 
             // Prepare the input tensor.
-            //Tensor<float> inputTensor = TextureConverter.ToTensor(cameraTexture2D, TARGET_WIDTH, TARGET_HEIGHT);
             Tensor<float> inputTensor = TextureConverter.ToTensor(webcamTexture, TARGET_WIDTH, TARGET_HEIGHT, 3);
 
             // Run the model
@@ -71,7 +76,7 @@ public class ImageResizer : MonoBehaviour
             Tensor<float> outputTensor = worker.PeekOutput() as Tensor<float>;
 
             // Process Model Output
-            List<YoloPrediction> predictions = yoloInference.ProcessYoloOutput(postProcessingShader, outputTensor, TARGET_WIDTH, TARGET_HEIGHT, confidenceThreshold, iouThreshold);
+            List<YoloPrediction> predictions = yoloInference.ProcessYoloOutput(outputTensor, TARGET_WIDTH, TARGET_HEIGHT);
 
             // Display Result 
             DrawBoundingBoxes(predictions);
@@ -95,9 +100,9 @@ public class ImageResizer : MonoBehaviour
 
         foreach (YoloPrediction prediction in yoloPredictions)
         {
-            // Instantiate a bounding box prefab
-            GameObject boundingBox = Instantiate(boundingBoxPrefab, canvasRectTransform);
-            drawnPredictions.Add(boundingBox);
+            // Get a bounding box from the pool
+            BoundingBox boundingBox = boundingBoxPool.Get();
+            activeBoundingBoxes.Add(boundingBox);
 
             // Get the RectTransform of the bounding box
             RectTransform boxRectTransform = boundingBox.GetComponent<RectTransform>();
@@ -114,32 +119,21 @@ public class ImageResizer : MonoBehaviour
             boxRectTransform.anchoredPosition = new Vector2(xMin + width / 2, yMin + height / 2); // Center the box
             boxRectTransform.sizeDelta = new Vector2(width, height);
 
-            // Set the outline color instead of filling the box
-            Image image = boundingBox.GetComponent<Image>();
-            if (image != null)
-            {
-                image.color = prediction.ClassColor;
-            }
-
-            // Optionally set the label (class name) and score on top of the bounding box
-            TMP_Text classNameText = boundingBox.GetComponentInChildren<TMP_Text>();
-            if (classNameText != null)
-            {
-                classNameText.text = $"{prediction.ClassName} ({prediction.Score:F2})";
-            }
+            // Update the bounding box appearance
+            boundingBox.SetColor(prediction.ClassColor);
+            boundingBox.SetLabel($"{prediction.ClassName} ({prediction.Score:F2})");
         }
     }
 
-    private void DestroyBoundingBoxes(List<GameObject> predictions)
+    private void ResetBoundingBoxes()
     {
-        if (predictions.Count == 0)
-            return;
-
-        foreach (GameObject box in predictions)
+        foreach (BoundingBox box in activeBoundingBoxes)
         {
-            Destroy(box);
+            boundingBoxPool.ReturnToPool(box);
         }
+        activeBoundingBoxes.Clear();
     }
+
     private void OnDisable()
     {
         worker.Dispose();
