@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Unity.Sentis;
 using UnityEngine;
 
@@ -29,19 +30,18 @@ public class YoloInference
             return null;
         }
 
+
         int numDetections = outputTensor.shape[2];
         int numClasses = 80;  // COCO dataset
-
         // Initialize the valid detection counter to 0
         uint[] zeroArray = { 0 };
 
         // Create compute buffers for input/output
         ComputeBuffer outputBoxesBuffer = new ComputeBuffer(numDetections, sizeof(float) * 4);  // Bounding boxes buffer
-        ComputeBuffer outputClassesBuffer = new ComputeBuffer(numDetections, sizeof(int));      // Class index buffer
-        ComputeBuffer outputScoresBuffer = new ComputeBuffer(numDetections, sizeof(float));     // Scores buffer
+        ComputeBuffer outputClassesBuffer = new ComputeBuffer(numDetections, sizeof(int));  // Class index buffer
+        ComputeBuffer outputScoresBuffer = new ComputeBuffer(numDetections, sizeof(float));  // Scores buffer
         ComputeBuffer validDetectionCounterBuffer = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Raw);  // Counter for valid detections
         ComputeBuffer outputTensorBuffer = computeTensorData.buffer;
-
         // Set compute shader parameters
         int kernelHandle = postProcessingShader.FindKernel("CSMain");
         postProcessingShader.SetFloat("confidenceThreshold", confidenceThreshold);
@@ -58,7 +58,7 @@ public class YoloInference
         postProcessingShader.SetBuffer(kernelHandle, "outputScores", outputScoresBuffer);
         postProcessingShader.SetBuffer(kernelHandle, "validDetectionCounter", validDetectionCounterBuffer);
 
-        // Dispatch compute shader
+        // Dispatch compute shader (numDetections / thread group size)
         int threadGroups = Mathf.CeilToInt((float)numDetections / 256);
         postProcessingShader.Dispatch(kernelHandle, threadGroups, 1, 1);
 
@@ -67,112 +67,18 @@ public class YoloInference
         validDetectionCounterBuffer.GetData(validDetectionCountArray);
         int validDetectionCount = (int)validDetectionCountArray[0];
 
-        if (validDetectionCount == 0)
-        {
-            // Release resources
-            outputBoxesBuffer.Release();
-            outputClassesBuffer.Release();
-            outputScoresBuffer.Release();
-            validDetectionCounterBuffer.Release();
-            computeTensorData.Dispose();
-            outputTensorBuffer.Release();
-
-            return new List<YoloPrediction>();
-        }
-
-        // Pass the buffers directly to the NMS shader
-        List<YoloPrediction> predictions = ApplyNonMaxSuppression(
-            outputBoxesBuffer, outputClassesBuffer, outputScoresBuffer, validDetectionCount);
-
-        // Release resources
-        outputBoxesBuffer.Release();
-        outputClassesBuffer.Release();
-        outputScoresBuffer.Release();
-        validDetectionCounterBuffer.Release();
-        computeTensorData.Dispose();
-        outputTensorBuffer.Release();
-
-        return predictions;
-    }
-
-    public List<YoloPrediction> ApplyNonMaxSuppression(
-        ComputeBuffer boxesBuffer, ComputeBuffer classesBuffer, ComputeBuffer scoresBuffer, int numDetections)
-    {
-        ComputeShader nmsShader = Resources.Load<ComputeShader>("NonMaxSuppression");
-        if (nmsShader == null)
-        {
-            Debug.LogError("NMS Compute Shader not found!");
-            return null;
-        }
-
-        if (numDetections == 0)
-            return new List<YoloPrediction>();
-
-        // Create output buffers for the NMS shader
-        ComputeBuffer nmsBoxesBuffer = new ComputeBuffer(numDetections, sizeof(float) * 4);
-        ComputeBuffer nmsClassesBuffer = new ComputeBuffer(numDetections, sizeof(int));
-        ComputeBuffer nmsScoresBuffer = new ComputeBuffer(numDetections, sizeof(float));
-
-        // Create an atomic counter for the number of detections after NMS
-        ComputeBuffer nmsDetectionCounterBuffer = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Raw);
-        uint[] zeroArray = { 0 };
-        nmsDetectionCounterBuffer.SetData(zeroArray);
-
-        // Create a buffer for selected indices
-        ComputeBuffer selectedIndicesBuffer = new ComputeBuffer(numDetections, sizeof(int));
-        // Initialize selectedIndices with zeros
-        int[] selectedIndicesInit = new int[numDetections];
-        selectedIndicesInit[0] = 1; // Initialize first index to 1
-        selectedIndicesBuffer.SetData(selectedIndicesInit);
-
-        // Set shader parameters
-        int kernelHandle = nmsShader.FindKernel("CSMain");
-        nmsShader.SetInt("numDetections", numDetections);
-        nmsShader.SetFloat("iouThreshold", iouThreshold);
-
-        // Bind buffers
-        nmsShader.SetBuffer(kernelHandle, "inputBoxes", boxesBuffer);
-        nmsShader.SetBuffer(kernelHandle, "inputScores", scoresBuffer);
-        nmsShader.SetBuffer(kernelHandle, "inputClasses", classesBuffer);
-        nmsShader.SetBuffer(kernelHandle, "outputBoxes", nmsBoxesBuffer);
-        nmsShader.SetBuffer(kernelHandle, "outputScores", nmsScoresBuffer);
-        nmsShader.SetBuffer(kernelHandle, "outputClasses", nmsClassesBuffer);
-        nmsShader.SetBuffer(kernelHandle, "nmsDetectionCounter", nmsDetectionCounterBuffer);
-        nmsShader.SetBuffer(kernelHandle, "selectedIndices", selectedIndicesBuffer);
-
-        // Dispatch shader
-        int threadGroups = Mathf.CeilToInt((float)numDetections / 256);
-        nmsShader.Dispatch(kernelHandle, threadGroups, 1, 1);
-
-        // Get the number of detections after NMS
-        uint[] nmsDetectionCountArray = new uint[1];
-        nmsDetectionCounterBuffer.GetData(nmsDetectionCountArray);
-        int nmsDetectionCount = (int)nmsDetectionCountArray[0];
-
-        if (nmsDetectionCount == 0)
-        {
-            // Release buffers
-            nmsBoxesBuffer.Release();
-            nmsScoresBuffer.Release();
-            nmsClassesBuffer.Release();
-            nmsDetectionCounterBuffer.Release();
-            selectedIndicesBuffer.Release();
-
-            return new List<YoloPrediction>();
-        }
-
         // Retrieve results from the GPU
-        float[] boxes = new float[nmsDetectionCount * 4];
-        int[] classes = new int[nmsDetectionCount];
-        float[] scores = new float[nmsDetectionCount];
+        float[] boxes = new float[validDetectionCount * 4];
+        int[] classes = new int[validDetectionCount];
+        float[] scores = new float[validDetectionCount];
 
-        nmsBoxesBuffer.GetData(boxes, 0, 0, nmsDetectionCount * 4);
-        nmsClassesBuffer.GetData(classes, 0, 0, nmsDetectionCount);
-        nmsScoresBuffer.GetData(scores, 0, 0, nmsDetectionCount);
+        outputBoxesBuffer.GetData(boxes, 0, 0, validDetectionCount * 4);
+        outputClassesBuffer.GetData(classes, 0, 0, validDetectionCount);
+        outputScoresBuffer.GetData(scores, 0, 0, validDetectionCount);
 
         // Convert output to YoloPrediction list
-        List<YoloPrediction> result = new List<YoloPrediction>();
-        for (int i = 0; i < nmsDetectionCount; i++)
+        List<YoloPrediction> predictions = new List<YoloPrediction>();
+        for (int i = 0; i < validDetectionCount; i++)
         {
             float xMin = boxes[i * 4 + 0];
             float yMin = boxes[i * 4 + 1];
@@ -187,16 +93,78 @@ public class YoloInference
                 Score = scores[i],
                 BoundingBox = new Rect(xMin, yMin, width, height)
             };
-            result.Add(prediction);
+            predictions.Add(prediction);
         }
 
-        // Release buffers
-        nmsBoxesBuffer.Release();
-        nmsScoresBuffer.Release();
-        nmsClassesBuffer.Release();
-        nmsDetectionCounterBuffer.Release();
-        selectedIndicesBuffer.Release();
+        // Release compute buffers
+        outputTensorBuffer.Release();
+        outputBoxesBuffer.Release();
+        outputClassesBuffer.Release();
+        outputScoresBuffer.Release();
+        validDetectionCounterBuffer.Release();
+        computeTensorData.Dispose();
+
+        // Apply class-wise Non-Max Suppression
+        return ApplyClassWiseNonMaxSuppression(predictions, iouThreshold);
+    }
+
+    // Class-wise Non-Max Suppression
+    public List<YoloPrediction> ApplyClassWiseNonMaxSuppression(List<YoloPrediction> predictions, float iouThreshold)
+    {
+        // Group the predictions by class
+        var groupedByClass = predictions.GroupBy(p => p.ClassIndex);
+
+        List<YoloPrediction> finalPredictions = new List<YoloPrediction>();
+
+        // Apply Non-Max Suppression for each class group
+        foreach (var classGroup in groupedByClass)
+        {
+            List<YoloPrediction> classPredictions = classGroup.ToList();
+
+            List<YoloPrediction> nmsResult = ApplyNonMaxSuppression(classPredictions, iouThreshold);
+            finalPredictions.AddRange(nmsResult);
+        }
+
+        return finalPredictions;
+    }
+
+    // Non-Max Suppression (NMS) for a single class
+    public List<YoloPrediction> ApplyNonMaxSuppression(List<YoloPrediction> predictions, float iouThreshold)
+    {
+        List<YoloPrediction> result = new List<YoloPrediction>();
+
+        // Sort the predictions by confidence score (descending)
+        foreach (var prediction in predictions.OrderByDescending(p => p.Score))
+        {
+            bool shouldSelect = true;
+
+            // Check for overlap with already selected predictions
+            foreach (var selectedPrediction in result)
+            {
+                float iou = CalculateIoU(prediction.BoundingBox, selectedPrediction.BoundingBox);
+                if (iou > iouThreshold)
+                {
+                    shouldSelect = false;
+                    break;
+                }
+            }
+
+            if (shouldSelect)
+            {
+                result.Add(prediction);
+            }
+        }
 
         return result;
+    }
+
+    private float CalculateIoU(Rect boxA, Rect boxB)
+    {
+        float intersectionWidth = Mathf.Max(0, Mathf.Min(boxA.xMax, boxB.xMax) - Mathf.Max(boxA.xMin, boxB.xMin));
+        float intersectionHeight = Mathf.Max(0, Mathf.Min(boxA.yMax, boxB.yMax) - Mathf.Max(boxA.yMin, boxB.yMin));
+        float intersectionArea = intersectionWidth * intersectionHeight;
+
+        float unionArea = boxA.width * boxA.height + boxB.width * boxB.height - intersectionArea;
+        return intersectionArea / unionArea;
     }
 }

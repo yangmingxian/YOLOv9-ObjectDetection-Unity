@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using Unity.Sentis;
 using System.Collections.Generic;
 using TMPro;
+using UnityEngine.Video;
 
 public class Detector : MonoBehaviour
 {
@@ -32,6 +33,13 @@ public class Detector : MonoBehaviour
 
     // Object Pooling
     private ObjectPool<BoundingBox> boundingBoxPool;
+
+    public Texture tex;
+
+    // Video-related properties
+    public VideoPlayer videoPlayer; // VideoPlayer component
+
+    private long lastProcessedFrame = -1; // Track the last processed frame
     private void OnEnable()
     {
         yoloInference = new YoloInference(confidenceThreshold, iouThreshold); 
@@ -41,12 +49,8 @@ public class Detector : MonoBehaviour
 
     void Start()
     {
-        // Initialize the webcam texture
-        webcamTexture = new WebCamTexture();
-        webcamTexture.Play();
-
-        // Assign the webcam texture to the RawImage
-        displayImage.texture = webcamTexture;
+        //InitialiseCamera();
+        InitialiseVideo();
 
         // Initialize the object pool
         RectTransform rawImageRectTransform = displayImage.GetComponent<RectTransform>();
@@ -55,9 +59,58 @@ public class Detector : MonoBehaviour
             initialSize: 10,
             parent: rawImageRectTransform
         );
+
+        //DetectImage(tex);
     }
 
+
+
     void Update()
+    {
+        //DetectCameraStream(webcamTexture);
+        DetectVideoStream(videoPlayer);
+    }
+
+    private void OnDisable()
+    {
+        worker.Dispose();
+    }
+
+    // Detections for different sources
+    private void DetectImage(Texture texture)
+    {
+        ResetBoundingBoxes();
+
+        displayImage.texture = texture;
+
+        // Prepare the input tensor.
+        Tensor<float> inputTensor = TextureConverter.ToTensor(tex, TARGET_WIDTH, TARGET_HEIGHT, 3);
+
+        // Run the model
+        worker.Schedule(inputTensor);
+
+        // Get output tensor
+        Tensor<float> outputTensor = worker.PeekOutput() as Tensor<float>;
+
+        // Process Model Output
+        List<YoloPrediction> predictions = yoloInference.ProcessYoloOutput(outputTensor, TARGET_WIDTH, TARGET_HEIGHT);
+
+        // Display Result 
+        DrawBoundingBoxes(predictions);
+
+        // Dispose tensors
+        outputTensor.Dispose();
+        inputTensor.Dispose();
+    }
+
+    private void InitialiseCamera()
+    {
+        // Initialize the webcam texture
+        webcamTexture = new WebCamTexture();
+        webcamTexture.Play();
+    }
+
+    private void DetectCameraStream(WebCamTexture webCamTexture) 
     {
         // Check if the webcam texture has received a new frame
         if (webcamTexture.didUpdateThisFrame)
@@ -84,6 +137,66 @@ public class Detector : MonoBehaviour
             // Dispose tensors
             outputTensor.Dispose();
             inputTensor.Dispose();
+        }
+    }
+
+    private void InitialiseVideo()
+    {
+        // Make sure the videoPlayer has a clip assigned
+        if (videoPlayer == null)
+        {
+            Debug.LogError("VideoPlayer component is not assigned!");
+            return;
+        }
+
+        if (videoPlayer.clip == null)
+        {
+            Debug.LogError("No VideoClip assigned to the VideoPlayer!");
+            return;
+        }
+
+        // Start playing the video
+        videoPlayer.Play();
+    }
+    private void DetectVideoStream(VideoPlayer vp)
+    {
+        // Check if a new frame is available from the VideoPlayer
+        if (vp.isPlaying && vp.frame > 0)
+        {
+            // Only process the frame if it's new
+            if (vp.frame != lastProcessedFrame)
+            { 
+                lastProcessedFrame = vp.frame; // Update the last processed frame
+
+                ResetBoundingBoxes(); // Ensure bounding boxes are reset properly
+
+                // Get the current frame texture from the VideoPlayer
+                Texture videoFrameTexture = vp.texture;
+
+                if (videoFrameTexture != null)
+                {
+                    displayImage.texture = videoFrameTexture;
+
+                    // Prepare the input tensor
+                    Tensor<float> inputTensor = TextureConverter.ToTensor(videoFrameTexture, TARGET_WIDTH, TARGET_HEIGHT, 3);
+
+                    // Run the model
+                    worker.Schedule(inputTensor);
+
+                    // Get output tensor
+                    Tensor<float> outputTensor = worker.PeekOutput() as Tensor<float>;
+
+                    // Process Model Output
+                    List<YoloPrediction> predictions = yoloInference.ProcessYoloOutput(outputTensor, TARGET_WIDTH, TARGET_HEIGHT);
+
+                    // Display the bounding boxes based on predictions
+                    DrawBoundingBoxes(predictions);
+
+                    // Dispose tensors
+                    outputTensor.Dispose();
+                    inputTensor.Dispose();
+                }
+            }
         }
     }
 
@@ -132,11 +245,6 @@ public class Detector : MonoBehaviour
             boundingBoxPool.ReturnToPool(box);
         }
         activeBoundingBoxes.Clear();
-    }
-
-    private void OnDisable()
-    {
-        worker.Dispose();
     }
 }
 
