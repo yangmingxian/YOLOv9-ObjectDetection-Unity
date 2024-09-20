@@ -3,33 +3,29 @@ using System.Linq;
 using Unity.Sentis;
 using UnityEngine;
 
-public class YoloInference
+public class Yolo
 {
     private float confidenceThreshold;
     private float iouThreshold;
+    private ComputeShader postProcessingShader;
+    public float ConfidenceThreshold { get => confidenceThreshold; set => confidenceThreshold = value; }
+    public float IouThreshold { get => iouThreshold; set => iouThreshold = value; }
 
-    public YoloInference(float confidenceThreshold = 0.5f, float iouThreshold = 0.4f)
+    public Yolo(float confidenceThreshold = 0.5f, float iouThreshold = 0.4f)
     {
         this.confidenceThreshold = confidenceThreshold;
         this.iouThreshold = iouThreshold;
+        PrepareShaders();
     }
 
-    public List<YoloPrediction> ProcessYoloOutput(Tensor<float> outputTensor, int imageWidth, int imageHeight)
+    public List<YoloPrediction> Predict(Tensor<float> outputTensor, int imageWidth, int imageHeight)
     {
-        ComputeShader postProcessingShader = Resources.Load<ComputeShader>("PostProcessOutput");
-        if (postProcessingShader == null)
-        {
-            Debug.LogError("Compute Shader not found!");
-            return null;
-        }
-
         ComputeTensorData computeTensorData = ComputeTensorData.Pin(outputTensor);
         if (computeTensorData == null)
         {
             Debug.LogError("Output Tensor not found!");
             return null;
         }
-
 
         int numDetections = outputTensor.shape[2];
         int numClasses = 80;  // COCO dataset
@@ -109,7 +105,7 @@ public class YoloInference
     }
 
     // Class-wise Non-Max Suppression
-    public List<YoloPrediction> ApplyClassWiseNonMaxSuppression(List<YoloPrediction> predictions, float iouThreshold)
+    private List<YoloPrediction> ApplyClassWiseNonMaxSuppression(List<YoloPrediction> predictions, float iouThreshold)
     {
         // Group the predictions by class
         var groupedByClass = predictions.GroupBy(p => p.ClassIndex);
@@ -129,7 +125,7 @@ public class YoloInference
     }
 
     // Non-Max Suppression (NMS) for a single class
-    public List<YoloPrediction> ApplyNonMaxSuppression(List<YoloPrediction> predictions, float iouThreshold)
+    private List<YoloPrediction> ApplyNonMaxSuppression(List<YoloPrediction> predictions, float iouThreshold)
     {
         List<YoloPrediction> result = new List<YoloPrediction>();
 
@@ -166,5 +162,18 @@ public class YoloInference
 
         float unionArea = boxA.width * boxA.height + boxB.width * boxB.height - intersectionArea;
         return intersectionArea / unionArea;
+    }
+
+    private void PrepareShaders()
+    {
+        postProcessingShader = Resources.Load<ComputeShader>("Shaders/PostProcessOutput");
+        if (postProcessingShader == null)
+        {
+            Debug.LogError("Compute Shader not found!");
+        }
+        else
+        {
+            Debug.Log($"Post Processing Shader is ready.");
+        }
     }
 }
