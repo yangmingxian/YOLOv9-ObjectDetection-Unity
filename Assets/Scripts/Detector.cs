@@ -7,6 +7,8 @@ public class Detector : MonoBehaviour
     private const int TARGET_WIDTH = 640;
     private const int TARGET_HEIGHT = 640;
 
+    public FileLoader fileLoader;
+
     // Object Detection
     private ModelAsset modelAsset;
     private Drawable screen;
@@ -22,6 +24,8 @@ public class Detector : MonoBehaviour
         modelAsset = Resources.Load<ModelAsset>("Models/yolov9-c");
         runtimeModel = ModelLoader.Load(modelAsset);
         worker = new Worker(runtimeModel, BackendType.GPUCompute);
+
+        fileLoader.OnSourceDetected += OnSourceChanged;
     }
 
     void Update()
@@ -46,14 +50,29 @@ public class Detector : MonoBehaviour
         yolo.ConfidenceThreshold = cTh;
 
         screen = new Drawable();
-        source = new CameraSource();
+        
 
         if (source.IsProcessedOnce())
         {
             DetectFrame();
+        } else
+        {
+            source.Play();
         }
     }
-
+    void OnSourceChanged(SourceType sourceType, string path)
+    {
+        if (sourceType == SourceType.ImageSource) {
+            source = new ImageSource(path);
+        }
+        else if (sourceType == SourceType.VideoSource)
+        {
+            source = new VideoSource(path);
+        } else
+        {
+            source = new CameraSource();
+        }
+    }
     private void DetectFrame()
     {
         // Get the newly generated texture

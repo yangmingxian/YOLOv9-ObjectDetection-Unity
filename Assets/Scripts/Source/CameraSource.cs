@@ -1,7 +1,4 @@
-using System.Collections.Generic;
-using Unity.Sentis;
 using UnityEngine;
-using UnityEngine.UI;
 
 public class CameraSource : Source
 {
@@ -10,7 +7,6 @@ public class CameraSource : Source
     public CameraSource()
     {
         webcamTexture = new WebCamTexture();
-        webcamTexture.Play();
     }
 
     public override Texture GetTexture()
@@ -26,5 +22,10 @@ public class CameraSource : Source
     public override bool IsProcessedOnce()
     {
         return false;
+    }
+
+    public override void Play()
+    {
+        webcamTexture.Play();
     }
 }
