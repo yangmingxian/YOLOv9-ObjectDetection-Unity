@@ -10,9 +10,9 @@ public class Detector : MonoBehaviour
     public FileLoader fileLoader;
 
     // Object Detection
-    private ModelAsset modelAsset;
+    [SerializeField] private ModelAsset modelAsset;
     private Drawable screen;
-    private Model runtimeModel;
+    [SerializeField] private Model runtimeModel;
     private Worker worker;
     private Yolo yolo;
     private Source source = null;

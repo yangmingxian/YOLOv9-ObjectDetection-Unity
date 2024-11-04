@@ -4,7 +4,6 @@ using UnityEngine.UI;
 
 public class Drawable
 {
-    // Object Pooling
     private ObjectPool<BoundingBox> boundingBoxPool;
     private RawImage screen;
     private RectTransform screenRectTransform;

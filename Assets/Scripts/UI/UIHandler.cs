@@ -40,23 +40,32 @@ public class UIHandler : MonoBehaviour
             sourceTypeSelector.onValueChanged.AddListener(OnSourceTypeChanged);
         }
     }
-
+    /// <summary>
+    /// 通用场景：confidenceThreshold = 0.5，iouThreshold = 0.5
+    // 检测准确性优先（减少误检）：confidenceThreshold = 0.6，iouThreshold = 0.5
+    // 检测灵敏度优先（减少漏检）：confidenceThreshold = 0.3，iouThreshold = 0.4
+    /// </summary>
     private void OnStartDetectionButtonClick()
     {
-        float cTh = float.Parse(confidenceThreshold.text);
-        float iouTh = float.Parse(iouThreshold.text);
-        detector.StartDetection(cTh, iouTh);
+        float cTh = 0.5f, iouTh = 0.5f;
+        if (!string.IsNullOrEmpty(confidenceThreshold.text))
+            cTh = float.Parse(confidenceThreshold.text);
+        if (!string.IsNullOrEmpty(iouThreshold.text))
+            iouTh = float.Parse(iouThreshold.text);
+
         userInterface.SetActive(false);
         display.SetActive(true);
+        detector.StartDetection(cTh, iouTh);
     }
 
     private void OnSourceTypeChanged(int value)
     {
         var sourceType = sourceTypes[value];
-        if ((sourceType == SourceType.CameraSource) && (openFileSelectonButton.gameObject.activeSelf))
+        if (sourceType == SourceType.CameraSource && openFileSelectonButton.gameObject.activeSelf)
         {
             openFileSelectonButton.gameObject.SetActive(false);
-        } else if ( ((sourceType == SourceType.VideoSource) || (sourceType == SourceType.ImageSource)) && (!openFileSelectonButton.gameObject.activeSelf) )
+        }
+        else if (((sourceType == SourceType.VideoSource) || (sourceType == SourceType.ImageSource)) && (!openFileSelectonButton.gameObject.activeSelf))
         {
             openFileSelectonButton.gameObject.SetActive(true);
         }

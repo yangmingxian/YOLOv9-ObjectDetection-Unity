@@ -1,3 +1,4 @@
+using System.Drawing;
 using UnityEngine;
 
 /// <summary>
@@ -5,6 +6,8 @@ using UnityEngine;
 /// </summary>
 public abstract class Source
 {
+    // 源大小
+    public Vector2Int originalSize;
     // 获取数据
     public abstract Texture GetTexture();
 

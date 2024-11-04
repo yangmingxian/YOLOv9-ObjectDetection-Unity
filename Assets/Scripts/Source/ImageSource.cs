@@ -43,12 +43,15 @@ public class ImageSource : Source
         {
             byte[] imageData = File.ReadAllBytes(path);
 
+            // 将路径的图片加载成texture
             isLoaded = texture.LoadImage(imageData);
-            // Load the image data into the texture
+            // 获取加载的图像的宽和高
+            originalSize = new Vector2Int(texture.width, texture.height);
+
             if (!isLoaded)
             {
                 Debug.LogError("Failed to load image data into texture.");
-            }  
+            }
         }
         else
         {
