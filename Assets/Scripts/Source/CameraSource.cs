@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 摄像头源
+/// </summary>
 public class CameraSource : Source
 {
     WebCamTexture webcamTexture;

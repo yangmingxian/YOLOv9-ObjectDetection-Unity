@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 public class ObjectPool<T> where T : MonoBehaviour
 {
-    private Queue<T> pool = new Queue<T>();
+    private Queue<T> pool = new();
     private T prefab;
     private Transform parentTransform;
 

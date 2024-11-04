@@ -5,7 +5,7 @@ public class YoloLables
 {
     private static float alpha = 0.25f;
 
-    private static readonly List<string>  ClassNames = new List<string>
+    private static readonly List<string>  ClassNames = new()
     {
         "person",
         "bicycle",
@@ -89,7 +89,7 @@ public class YoloLables
         "toothbrush"
     };
 
-    private static List<Color> ClassColors = new List<Color>
+    private static List<Color> ClassColors = new()
     {
         new Color(0.929f, 0.490f, 0.192f, alpha),  // Class 1
         new Color(0.850f, 0.325f, 0.098f, alpha),  // Class 2

@@ -3,6 +3,16 @@ using System.Linq;
 using Unity.Sentis;
 using UnityEngine;
 
+
+public class YoloPrediction
+{
+    public int ClassIndex { get; set; }
+    public string ClassName { get; set; }
+    public Color ClassColor { get; set; }
+    public float Score { get; set; }
+    public Rect BoundingBox { get; set; }
+}
+
 public class Yolo
 {
     private float confidenceThreshold;
@@ -33,10 +43,10 @@ public class Yolo
         uint[] zeroArray = { 0 };
 
         // Create compute buffers for input/output
-        ComputeBuffer outputBoxesBuffer = new ComputeBuffer(numDetections, sizeof(float) * 4);  // Bounding boxes buffer
-        ComputeBuffer outputClassesBuffer = new ComputeBuffer(numDetections, sizeof(int));  // Class index buffer
-        ComputeBuffer outputScoresBuffer = new ComputeBuffer(numDetections, sizeof(float));  // Scores buffer
-        ComputeBuffer validDetectionCounterBuffer = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Raw);  // Counter for valid detections
+        ComputeBuffer outputBoxesBuffer = new(numDetections, sizeof(float) * 4);  // Bounding boxes buffer
+        ComputeBuffer outputClassesBuffer = new(numDetections, sizeof(int));  // Class index buffer
+        ComputeBuffer outputScoresBuffer = new(numDetections, sizeof(float));  // Scores buffer
+        ComputeBuffer validDetectionCounterBuffer = new(1, sizeof(uint), ComputeBufferType.Raw);  // Counter for valid detections
         ComputeBuffer outputTensorBuffer = computeTensorData.buffer;
         // Set compute shader parameters
         int kernelHandle = postProcessingShader.FindKernel("CSMain");
@@ -73,7 +83,7 @@ public class Yolo
         outputScoresBuffer.GetData(scores, 0, 0, validDetectionCount);
 
         // Convert output to YoloPrediction list
-        List<YoloPrediction> predictions = new List<YoloPrediction>();
+        List<YoloPrediction> predictions = new();
         for (int i = 0; i < validDetectionCount; i++)
         {
             float xMin = boxes[i * 4 + 0];
@@ -81,7 +91,7 @@ public class Yolo
             float width = boxes[i * 4 + 2];
             float height = boxes[i * 4 + 3];
 
-            YoloPrediction prediction = new YoloPrediction
+            YoloPrediction prediction = new()
             {
                 ClassIndex = classes[i],
                 ClassName = YoloLables.GetClassName(classes[i]),
@@ -110,7 +120,7 @@ public class Yolo
         // Group the predictions by class
         var groupedByClass = predictions.GroupBy(p => p.ClassIndex);
 
-        List<YoloPrediction> finalPredictions = new List<YoloPrediction>();
+        List<YoloPrediction> finalPredictions = new();
 
         // Apply Non-Max Suppression for each class group
         foreach (var classGroup in groupedByClass)
@@ -127,7 +137,7 @@ public class Yolo
     // Non-Max Suppression (NMS) for a single class
     private List<YoloPrediction> ApplyNonMaxSuppression(List<YoloPrediction> predictions, float iouThreshold)
     {
-        List<YoloPrediction> result = new List<YoloPrediction>();
+        List<YoloPrediction> result = new();
 
         // Sort the predictions by confidence score (descending)
         foreach (var prediction in predictions.OrderByDescending(p => p.Score))

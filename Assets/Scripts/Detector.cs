@@ -50,25 +50,28 @@ public class Detector : MonoBehaviour
         yolo.ConfidenceThreshold = cTh;
 
         screen = new Drawable();
-        
+
 
         if (source.IsProcessedOnce())
         {
             DetectFrame();
-        } else
+        }
+        else
         {
             source.Play();
         }
     }
     void OnSourceChanged(SourceType sourceType, string path)
     {
-        if (sourceType == SourceType.ImageSource) {
+        if (sourceType == SourceType.ImageSource)
+        {
             source = new ImageSource(path);
         }
         else if (sourceType == SourceType.VideoSource)
         {
             source = new VideoSource(path);
-        } else
+        }
+        else
         {
             source = new CameraSource();
         }

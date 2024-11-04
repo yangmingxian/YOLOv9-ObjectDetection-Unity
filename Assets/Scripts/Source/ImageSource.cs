@@ -3,7 +3,7 @@ using UnityEngine;
 
 public class ImageSource : Source
 {
-    private Texture2D texture = new Texture2D(2, 2);
+    private Texture2D texture = new(2, 2);
     private bool isLoaded = false;
     public ImageSource(string path)
     {

@@ -16,7 +16,7 @@ public class UIHandler : MonoBehaviour
     [SerializeField] private GameObject display;
     [SerializeField] private GameObject fileSelectorPrefab;
 
-    private List<SourceType> sourceTypes = new List<SourceType> { SourceType.ImageSource, SourceType.CameraSource, SourceType.VideoSource };
+    private List<SourceType> sourceTypes = new() { SourceType.ImageSource, SourceType.CameraSource, SourceType.VideoSource };
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()

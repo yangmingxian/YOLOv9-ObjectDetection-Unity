@@ -11,7 +11,7 @@ public class FileLoader : MonoBehaviour
 {
     public Action<SourceType, string> OnSourceDetected;
 
-    private List<SourceType> sourceTypes = new List<SourceType> { SourceType.ImageSource, SourceType.CameraSource, SourceType.VideoSource };
+    private List<SourceType> sourceTypes = new() { SourceType.ImageSource, SourceType.CameraSource, SourceType.VideoSource };
     private string path = "";
     private SourceType sourceType = SourceType.ImageSource;
     // Method to open the file browser
