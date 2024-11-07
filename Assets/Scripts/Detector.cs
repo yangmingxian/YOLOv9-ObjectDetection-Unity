@@ -4,8 +4,8 @@ using System.Collections.Generic;
 
 public class Detector : MonoBehaviour
 {
-    private const int TARGET_WIDTH = 640;
-    private const int TARGET_HEIGHT = 640;
+    public const int TARGET_WIDTH = 640;
+    public const int TARGET_HEIGHT = 640;
 
     public FileLoader fileLoader;
 
@@ -17,6 +17,16 @@ public class Detector : MonoBehaviour
     private Yolo yolo;
     private Source source = null;
 
+    private void OnEnable()
+    {
+        fileLoader.OnFileSelected += OnSourceChanged;
+    }
+    private void OnDisable()
+    {
+        fileLoader.OnFileSelected -= OnSourceChanged;
+        worker.Dispose();
+    }
+
     void Start()
     {
         // Initialise Classes
@@ -24,11 +34,9 @@ public class Detector : MonoBehaviour
         modelAsset = Resources.Load<ModelAsset>("Models/yolov9-c");
         runtimeModel = ModelLoader.Load(modelAsset);
         worker = new Worker(runtimeModel, BackendType.GPUCompute);
-
-        fileLoader.OnSourceDetected += OnSourceChanged;
     }
 
-    void Update()
+    void FixedUpdate()
     {
         if (source == null || source.IsProcessedOnce())
             return;
@@ -39,18 +47,12 @@ public class Detector : MonoBehaviour
         }
     }
 
-    private void OnDisable()
-    {
-        worker.Dispose();
-    }
-
     public void StartDetection(float cTh, float iouTh)
     {
         yolo.IouThreshold = iouTh;
         yolo.ConfidenceThreshold = cTh;
 
-        screen = new Drawable();
-
+        screen = new Drawable(source);
 
         if (source.IsProcessedOnce())
         {
@@ -61,6 +63,11 @@ public class Detector : MonoBehaviour
             source.Play();
         }
     }
+    public void StopDetection()
+    {
+        source = null;
+    }
+
     void OnSourceChanged(SourceType sourceType, string path)
     {
         if (sourceType == SourceType.ImageSource)

@@ -5,16 +5,17 @@ using UnityEngine.UI;
 public class Drawable
 {
     private ObjectPool<BoundingBox> boundingBoxPool;
-    private RawImage screen;
+    public RawImage screen;
     private RectTransform screenRectTransform;
     private List<BoundingBox> activeBoundingBoxes;
     private GameObject boundingBoxPrefab;
     private float screenWidth;
     private float screenHeight;
 
-    public Drawable()
+    public Drawable(Source source)
     {
         screen = GameObject.Find("Display").GetComponent<RawImage>();
+        ScaleOutputDisplay(source.originalSize);
         PrepareBoundingBoxPool();
     }
 
@@ -28,7 +29,33 @@ public class Drawable
 
         screen.texture = texture;
     }
-    
+
+    public void ScaleOutputDisplay(Vector2Int originalSize)
+    {
+        // 计算宽高缩放比例
+        // Debug.Log("Screen.width" + Screen.width + " Screen.height" + Screen.height);
+
+        float widthScale = 1920f / Detector.TARGET_WIDTH;
+        float hightScale = 1080f / Detector.TARGET_HEIGHT;
+
+        var remainRatioRate = (float)originalSize.x / originalSize.y;
+
+        var scale = Mathf.Min(widthScale, hightScale);
+        // Debug.Log("widthScale" + widthScale + " hightScale" + hightScale);
+        // Debug.Log("scale" + scale);
+
+        if (scale == widthScale)
+        {
+            var temp = widthScale / remainRatioRate;
+            screen.transform.localScale = new Vector3(widthScale, temp, 1);
+        }
+        else
+        {
+            var temp = hightScale * remainRatioRate;
+            screen.transform.localScale = new Vector3(temp, hightScale, 1);
+        }
+    }
+
     public void DrawBoundingBoxes(List<YoloPrediction> yoloPredictions)
     {
         // Calculate the offset for center-middle anchoring

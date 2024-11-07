@@ -9,12 +9,11 @@ using UnityEngine.Video;
 
 public class FileLoader : MonoBehaviour
 {
-    public Action<SourceType, string> OnSourceDetected;
-
-    private List<SourceType> sourceTypes = new() { SourceType.ImageSource, SourceType.CameraSource, SourceType.VideoSource };
-    private string path = "";
+    private string filePath = "";
     private SourceType sourceType = SourceType.ImageSource;
-    // Method to open the file browser
+
+    public Action<SourceType, string> OnFileSelected;
+
     public void OpenFileBrowser()
     {
         // Set filters for images and videos
@@ -23,33 +22,29 @@ public class FileLoader : MonoBehaviour
             new FileBrowser.Filter("Videos", ".mp4", ".avi", ".mov"));
 
         // Set default filter
-        FileBrowser.SetDefaultFilter(".jpg");
+        // FileBrowser.SetDefaultFilter(".jpg");
 
         // Show the file browser
         StartCoroutine(ShowLoadDialogCoroutine());
     }
 
-    // Coroutine to handle the file selection
+    // 协程-处理文件选择逻辑
     IEnumerator ShowLoadDialogCoroutine()
     {
-        // Wait for the user to select a file
+        // 等待用户选择文件
         yield return FileBrowser.WaitForLoadDialog(FileBrowser.PickMode.Files, false, null, null, "Select File", "Load");
 
-        // Check if a file was selected
         if (FileBrowser.Success)
         {
             string path = FileBrowser.Result[0];
             Debug.Log("Selected: " + path);
 
-            // Get the file extension
             string extension = Path.GetExtension(path).ToLower();
 
-            // Check if the file is an image
             if (extension == ".jpg" || extension == ".png" || extension == ".jpeg")
             {
                 LoadImage(path);
             }
-            // Check if the file is a video
             else if (extension == ".mp4" || extension == ".avi" || extension == ".mov")
             {
                 LoadVideo(path);
@@ -73,23 +68,22 @@ public class FileLoader : MonoBehaviour
         {
             Debug.Log("Setting Default To: Video");
             FileBrowser.SetDefaultFilter(".mp4");
-        } else
+        }
+        else
         {
-            OnSourceDetected?.Invoke(sourceType, "");
+            OnFileSelected?.Invoke(sourceType, "");
         }
     }
 
-    // Method to load and play the video
     void LoadVideo(string path)
     {
-        this.path = path;
-        OnSourceDetected?.Invoke(sourceType, path);
+        this.filePath = path;
+        OnFileSelected?.Invoke(sourceType, path);
     }
 
-    // Coroutine to load and display the image
     void LoadImage(string path)
     {
-        this.path = path;
-        OnSourceDetected.Invoke(sourceType, path);
+        this.filePath = path;
+        OnFileSelected.Invoke(sourceType, path);
     }
 }

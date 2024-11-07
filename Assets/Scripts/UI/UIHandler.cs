@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -6,6 +7,7 @@ using UnityEngine.UI;
 public class UIHandler : MonoBehaviour
 {
     [SerializeField] private Button startDetectionButton;
+    [SerializeField] private Button stopDetectionButton;
     [SerializeField] private Button openFileSelectonButton;
     [SerializeField] private TMP_InputField confidenceThreshold;
     [SerializeField] private TMP_InputField iouThreshold;
@@ -15,6 +17,42 @@ public class UIHandler : MonoBehaviour
     [SerializeField] private GameObject userInterface;
     [SerializeField] private GameObject display;
     [SerializeField] private GameObject fileSelectorPrefab;
+    [SerializeField] private GameObject watermark;
+
+
+
+
+    SourceType curSourceType;
+
+    public TMP_Text pathText;
+    private void OnEnable()
+    {
+        fileLoader.OnFileSelected += FreshPathInfo;
+    }
+    private void OnDisable()
+    {
+        fileLoader.OnFileSelected -= FreshPathInfo;
+    }
+    void FreshPathInfo(SourceType sourceType, string path)
+    {
+        curSourceType = sourceType;
+        string fileName = Path.GetFileName(path);
+        if (pathText != null)
+        {
+            switch (sourceType)
+            {
+                case SourceType.ImageSource:
+                    pathText.text = $"数据源类型: 图片\n数据源名称: {fileName}";
+                    break;
+                case SourceType.VideoSource:
+                    pathText.text = $"数据源类型: 视频\n数据源名称: {fileName}";
+                    break;
+                default:
+                    pathText.text = "";
+                    break;
+            }
+        }
+    }
 
     private List<SourceType> sourceTypes = new() { SourceType.ImageSource, SourceType.CameraSource, SourceType.VideoSource };
 
@@ -26,6 +64,12 @@ public class UIHandler : MonoBehaviour
         {
             // Add a listener to the button
             startDetectionButton.onClick.AddListener(OnStartDetectionButtonClick);
+        }
+
+        if (stopDetectionButton != null)
+        {
+            // Add a listener to the button
+            stopDetectionButton.onClick.AddListener(OnStopDetectionButtonClick);
         }
 
         // Ensure the button is assigned
@@ -53,9 +97,21 @@ public class UIHandler : MonoBehaviour
         if (!string.IsNullOrEmpty(iouThreshold.text))
             iouTh = float.Parse(iouThreshold.text);
 
+        // 没有Path的时候就不会进入识别
+        if (curSourceType != SourceType.CameraSource && string.IsNullOrEmpty(pathText.text))
+            return;
+
         userInterface.SetActive(false);
         display.SetActive(true);
         detector.StartDetection(cTh, iouTh);
+    }
+
+    private void OnStopDetectionButtonClick()
+    {
+        pathText.text = "";
+        detector.StopDetection();
+        userInterface.SetActive(true);
+        display.SetActive(false);
     }
 
     private void OnSourceTypeChanged(int value)
