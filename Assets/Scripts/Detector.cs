@@ -12,7 +12,7 @@ public class Detector : MonoBehaviour
     // Object Detection
     [SerializeField] private ModelAsset modelAsset;
     private Drawable screen;
-    [SerializeField] private Model runtimeModel;
+    private Model runtimeModel;
     private Worker worker;
     private Yolo yolo;
     private Source source = null;
@@ -31,7 +31,8 @@ public class Detector : MonoBehaviour
     {
         // Initialise Classes
         yolo = new Yolo();
-        modelAsset = Resources.Load<ModelAsset>("Models/yolov9-c");
+        if (modelAsset == null)
+            modelAsset = Resources.Load<ModelAsset>("Models/yolov8n");
         runtimeModel = ModelLoader.Load(modelAsset);
         worker = new Worker(runtimeModel, BackendType.GPUCompute);
     }
@@ -66,6 +67,7 @@ public class Detector : MonoBehaviour
     public void StopDetection()
     {
         source = null;
+        screen.ResetBoundingBoxes();
     }
 
     void OnSourceChanged(SourceType sourceType, string path)
