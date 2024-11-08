@@ -28,6 +28,20 @@ public class Yolo
         PrepareShaders();
     }
 
+    private ComputeBuffer outputBoxesBuffer;
+    private ComputeBuffer outputClassesBuffer;
+    private ComputeBuffer outputScoresBuffer;
+    private ComputeBuffer validDetectionCounterBuffer;
+
+    // Create compute buffers for input/output
+    public void InitializeBuffers(int numDetections)
+    {
+        outputBoxesBuffer ??= new ComputeBuffer(numDetections, sizeof(float) * 4);// Bounding boxes buffer
+        outputClassesBuffer ??= new ComputeBuffer(numDetections, sizeof(int));// Class index buffer
+        outputScoresBuffer ??= new ComputeBuffer(numDetections, sizeof(float));// Scores buffer
+        validDetectionCounterBuffer ??= new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Raw); // Counter for valid detections
+    }
+
     public List<YoloPrediction> Predict(Tensor<float> outputTensor, int imageWidth, int imageHeight)
     {
         ComputeTensorData computeTensorData = ComputeTensorData.Pin(outputTensor);
@@ -38,16 +52,13 @@ public class Yolo
         }
 
         int numDetections = outputTensor.shape[2];
-        int numClasses = 80;  // COCO dataset
-        // Initialize the valid detection counter to 0
-        uint[] zeroArray = { 0 };
+        InitializeBuffers(numDetections);  // 初始化或复用缓冲区
 
-        // Create compute buffers for input/output
-        ComputeBuffer outputBoxesBuffer = new(numDetections, sizeof(float) * 4);  // Bounding boxes buffer
-        ComputeBuffer outputClassesBuffer = new(numDetections, sizeof(int));  // Class index buffer
-        ComputeBuffer outputScoresBuffer = new(numDetections, sizeof(float));  // Scores buffer
-        ComputeBuffer validDetectionCounterBuffer = new(1, sizeof(uint), ComputeBufferType.Raw);  // Counter for valid detections
-        ComputeBuffer outputTensorBuffer = computeTensorData.buffer;
+        uint[] zeroArray = { 0 }; // Initialize the valid detection counter to 0
+        validDetectionCounterBuffer.SetData(zeroArray);
+
+        int numClasses = 80;  // COCO dataset
+
         // Set compute shader parameters
         int kernelHandle = postProcessingShader.FindKernel("CSMain");
         postProcessingShader.SetFloat("confidenceThreshold", confidenceThreshold);
@@ -55,10 +66,9 @@ public class Yolo
         postProcessingShader.SetInt("numClasses", numClasses);
         postProcessingShader.SetInt("imageWidth", imageWidth);
         postProcessingShader.SetInt("imageHeight", imageHeight);
-        validDetectionCounterBuffer.SetData(zeroArray);
 
         // Bind buffers to the compute shader
-        postProcessingShader.SetBuffer(kernelHandle, "outputTensor", outputTensorBuffer);
+        postProcessingShader.SetBuffer(kernelHandle, "outputTensor", computeTensorData.buffer);
         postProcessingShader.SetBuffer(kernelHandle, "outputBoxes", outputBoxesBuffer);
         postProcessingShader.SetBuffer(kernelHandle, "outputClasses", outputClassesBuffer);
         postProcessingShader.SetBuffer(kernelHandle, "outputScores", outputScoresBuffer);
@@ -91,24 +101,18 @@ public class Yolo
             float width = boxes[i * 4 + 2];
             float height = boxes[i * 4 + 3];
 
-            YoloPrediction prediction = new()
+            predictions.Add(new YoloPrediction
             {
                 ClassIndex = classes[i],
                 ClassName = YoloLables.GetClassName(classes[i]),
                 ClassColor = YoloLables.GetClassColor(classes[i]),
                 Score = scores[i],
                 BoundingBox = new Rect(xMin, yMin, width, height)
-            };
-            predictions.Add(prediction);
+            });
         }
 
         // Release compute buffers
-        outputTensorBuffer.Release();
-        outputBoxesBuffer.Release();
-        outputClassesBuffer.Release();
-        outputScoresBuffer.Release();
-        validDetectionCounterBuffer.Release();
-        computeTensorData.Dispose();
+        computeTensorData.Dispose();  // 释放 GPU 张量
 
         // Apply class-wise Non-Max Suppression
         return ApplyClassWiseNonMaxSuppression(predictions, iouThreshold);

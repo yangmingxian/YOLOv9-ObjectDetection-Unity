@@ -87,31 +87,31 @@ public class Detector : MonoBehaviour
     }
     private void DetectFrame()
     {
-        // Get the newly generated texture
+        // 获取数据源输入
         Texture texture = source.GetTexture();
 
-        // Remove the old bounding boxes
+        // 清除识别框
         screen.ResetBoundingBoxes();
 
-        // Display the texture
+        // 数据源显示
         screen.SetTexture(texture);
 
-        // Prepare the input tensor
+        // 输入张量
         Tensor<float> inputTensor = TextureConverter.ToTensor(texture, TARGET_WIDTH, TARGET_HEIGHT, 3);
 
-        // Run the model on the input
+        // 运行模型
         worker.Schedule(inputTensor);
 
-        // Get output tensor
+        // 获取输出张量
         Tensor<float> outputTensor = worker.PeekOutput() as Tensor<float>;
 
-        // Process Model Output
+        // 处理模型的输出
         List<YoloPrediction> predictions = yolo.Predict(outputTensor, TARGET_WIDTH, TARGET_HEIGHT);
 
-        // Draw the new bounding boxes 
+        // 绘制识别框
         screen.DrawBoundingBoxes(predictions);
 
-        // Dispose tensors
+        // 释放非托管的张量资源
         outputTensor.Dispose();
         inputTensor.Dispose();
     }
