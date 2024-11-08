@@ -129,10 +129,7 @@ public class Yolo
         // Apply Non-Max Suppression for each class group
         foreach (var classGroup in groupedByClass)
         {
-            List<YoloPrediction> classPredictions = classGroup.ToList();
-
-            List<YoloPrediction> nmsResult = ApplyNonMaxSuppression(classPredictions, iouThreshold);
-            finalPredictions.AddRange(nmsResult);
+            finalPredictions.AddRange(ApplyNonMaxSuppression(classGroup.ToList(), iouThreshold));
         }
 
         return finalPredictions;
@@ -141,30 +138,20 @@ public class Yolo
     // Non-Max Suppression (NMS) for a single class
     private List<YoloPrediction> ApplyNonMaxSuppression(List<YoloPrediction> predictions, float iouThreshold)
     {
+        // Sort predictions by confidence in descending order and initialize result list
+        predictions.Sort((p1, p2) => p2.Score.CompareTo(p1.Score));
         List<YoloPrediction> result = new();
 
-        // Sort the predictions by confidence score (descending)
-        foreach (var prediction in predictions.OrderByDescending(p => p.Score))
+        while (predictions.Count > 0)
         {
-            bool shouldSelect = true;
+            // Select the prediction with the highest confidence
+            var bestPrediction = predictions[0];
+            result.Add(bestPrediction);
+            predictions.RemoveAt(0);
 
-            // Check for overlap with already selected predictions
-            foreach (var selectedPrediction in result)
-            {
-                float iou = CalculateIoU(prediction.BoundingBox, selectedPrediction.BoundingBox);
-                if (iou > iouThreshold)
-                {
-                    shouldSelect = false;
-                    break;
-                }
-            }
-
-            if (shouldSelect)
-            {
-                result.Add(prediction);
-            }
+            // Remove predictions that have a high IoU with the selected prediction
+            predictions.RemoveAll(prediction => CalculateIoU(bestPrediction.BoundingBox, prediction.BoundingBox) > iouThreshold);
         }
-
         return result;
     }
 
